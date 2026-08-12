@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chladni Plate - Audio Visualizer</title>
+    <style>
+        body {
+            background-color: #0a0a0a;
+            color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            padding: 20px;
+            background: #1a1a1a;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        canvas {
+            background-color: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+
+        .sidebar {
+            width: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding: 10px;
+            background: #252525;
+            border-radius: 8px;
+        }
+
+        label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #888;
+            letter-spacing: 1px;
+        }
+
+        select, input[type="file"], button {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover { background: #444; }
+        button.active { background: #2ecc71; border-color: #2ecc71; }
+
+        .stats {
+            font-family: monospace;
+            font-size: 12px;
+            color: #2ecc71;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <canvas id="plate"></canvas>
+
+        <div class="sidebar">
+            <h2 style="margin:0 0 10px 0; font-weight: 300;">Cymatics Lab</h2>
+            
+            <div class="control-group">
+                <label>1. Audio Source</label>
+                <input type="file" id="audioFile" accept="audio/*">
+                <button id="togglePlay" style="margin-top:5px;">Play / Pause</button>
+            </div>
+
+            <div class="control-group">
+                <label>2. Color Mapping</label>
+                <select id="colorMode">
+                    <option value="white">Classic White</option>
+                    <option value="amber">Amber Glow</option>
+                    <option value="freq">Frequency Reactive (HSL)</option>
+                    <option value="velocity">Kinetic Energy (Heatmap)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>3. Sensitivity</label>
+                <input type="range" id="sensitivity" min="0.1" max="5" step="0.1" value="1.5">
+            </div>
+
+            <div class="control-group">
+                <div class="stats">
+                    Detected: <span id="detectedFreq">0</span> Hz<br>
+                    Mode (N): <span id="modeN">0</span><br>
+                    Mode (M): <span id="modeM">0</span>
+                </div>
+            </div>
+            
+            <p style="font-size: 10px; color: #555;">Note: Higher frequencies create more complex nodes.</p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('plate');
+        const ctx = canvas.getContext('2d');
+        const CANVAS_SIZE = 600;
+        const PARTICLE_COUNT = 8000;
+        
+        canvas.width = CANVAS_SIZE;
+        canvas.height = CANVAS_SIZE;
+
+        // State Variables
+        let audioCtx, analyser, source, buffer;
+        let isPlaying = false;
+        let n = 2, m = 1;
+        let currentFreq = 0;
+        let particles = [];
+
+        // UI Refs
+        const fileInput = document.getElementById('audioFile');
+        const colorMode = document.getElementById('colorMode');
+        const freqLabel = document.getElementById('detectedFreq');
+        const nLabel = document.getElementById('modeN');
+        const mLabel = document.getElementById('modeM');
+        const sensitivity = document.getElementById('sensitivity');
+
+        class Grain {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * CANVAS_SIZE;
+                this.y = Math.random() * CANVAS_SIZE;
+                this.vx = 0;
+                this.vy = 0;
+                this.intensity = 0;
+            }
+
+            update() {
+                if (!isPlaying) return;
+
+                let nx = this.x / CANVAS_SIZE;
+                let ny = this.y / CANVAS_SIZE;
+                let PI = Math.PI;
+
+                // Chladni Equation
+                this.intensity = Math.cos(n * PI * nx) * Math.cos(m * PI * ny) - 
+                                 Math.cos(m * PI * nx) * Math.cos(n * PI * ny);
+                
+                let amp = Math.abs(this.intensity);
+
+                // If the plate is vibrating here, move the grain
+                if (amp > 0.01) {
+                    let force = amp * sensitivity.value;
+                    this.vx = (Math.random() - 0.5) * force;
+                    this.vy = (Math.random() - 0.5) * force;
+                    this.x += this.vx;
+                    this.y += this.vy;
+                }
+
+                // Bounds check
+                if (this.x < 0 || this.x > CANVAS_SIZE || this.y < 0 || this.y > CANVAS_SIZE) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                let color;
+                switch(colorMode.value) {
+                    case 'amber': color = '#ffcc00'; break;
+                    case 'freq': 
+                        color = `hsl(${(currentFreq/10) % 360}, 70%, 60%)`; 
+                        break;
+                    case 'velocity': 
+                        let speed = Math.abs(this.vx) + Math.abs(this.vy);
+                        color = `rgb(${100 + speed * 50}, 50, ${255 - speed * 50})`;
+                        break;
+                    default: color = 'white';
+                }
+
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.6;
+                ctx.fillRect(this.x, this.y, 1.2, 1.2);
+            }
+        }
+
+        // Initialize Particles
+        for(let i=0; i<PARTICLE_COUNT; i++) particles.push(new Grain());
+
+        // Audio Processing logic
+        async function setupAudio(file) {
+            if (audioCtx) audioCtx.close();
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+
+            const arrayBuffer = await file.arrayBuffer();
+            buffer = await audioCtx.decodeAudioData(arrayBuffer);
+            startPlayback();
+        }
+
+        function startPlayback() {
+            if (source) source.stop();
+            source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            source.start();
+            isPlaying = true;
+            document.getElementById('togglePlay').classList.add('active');
+        }
+
+        function analyzeFrequency() {
+            if (!isPlaying) return;
+
+            let bufferLength = analyser.frequencyBinCount;
+            let dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Find peak frequency
+            let maxVal = 0;
+            let maxIndex = 0;
+            for(let i = 0; i < bufferLength; i++) {
+                if(dataArray[i] > maxVal) {
+                    maxVal = dataArray[i];
+                    maxIndex = i;
+                }
+            }
+
+            // Convert bin index to Hz
+            currentFreq = maxIndex * audioCtx.sampleRate / analyser.fftSize;
+            
+            if (maxVal > 50) { // Threshold to ignore silence
+                freqLabel.textContent = Math.round(currentFreq);
+                // Map frequency to Chladni N, M modes
+                n = Math.floor(currentFreq / 120) + 2;
+                m = Math.floor((currentFreq % 120) / 15) + 1;
+                nLabel.textContent = n;
+                mLabel.textContent = m;
+            }
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) setupAudio(e.target.files[0]);
+        });
+
+        document.getElementById('togglePlay').addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            else if (audioCtx.state === 'running') audioCtx.suspend();
+            isPlaying = !isPlaying;
+        });
+
+        function animate() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+            analyzeFrequency();
+
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
