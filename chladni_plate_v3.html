@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cymatics Lab: Physics Edition</title>
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 25px;
+            padding: 25px;
+            background: #1a1a1a;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+            border: 1px solid #333;
+        }
+
+        canvas {
+            background-color: #000;
+            border: 1px solid #444;
+            border-radius: 12px;
+            box-shadow: inset 0 0 50px rgba(255,255,255,0.05);
+        }
+
+        .sidebar {
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            background: #252525;
+            border-radius: 10px;
+            border: 1px solid #333;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #aaa;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        select, input[type="file"], button {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        button:hover { background: #444; }
+        button.active { background: #3498db; border-color: #3498db; }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .stats {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #3498db;
+            line-height: 1.5;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: #ddd;
+        }
+
+        h2 { margin: 0 0 5px 0; font-weight: 300; color: #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <canvas id="plate"></canvas>
+
+        <div class="sidebar">
+            <h2>Cymatics Lab</h2>
+            
+            <div class="control-group">
+                <label>Audio Source</label>
+                <input type="file" id="audioFile" accept="audio/*">
+                <button id="togglePlay">Play / Pause</button>
+            </div>
+
+            <div class="control-group">
+                <label>Plate Physical Properties</label>
+                <div class="row">
+                    <label>Thickness (Stiffness)</label>
+                    <span id="thickVal" style="font-size: 10px; color:#3498db">1.0</span>
+                </div>
+                <input type="range" id="thickSlider" min="0.5" max="5.0" step="0.1" value="1.0">
+                
+                <div class="row" style="margin-top:5px;">
+                    <label>Symmetry Weight</label>
+                    <span id="weightVal" style="font-size: 10px; color:#3498db">0.98</span>
+                </div>
+                <input type="range" id="weightSlider" min="0.5" max="1.5" step="0.01" value="0.98">
+                
+                <label class="checkbox-container" style="margin-top:5px;">
+                    <input type="checkbox" id="addMode" checked> 
+                    Symmetric Mode (Addition)
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>Visuals</label>
+                <select id="colorMode">
+                    <option value="white">Classic White</option>
+                    <option value="amber">Amber Glow</option>
+                    <option value="freq">Frequency Reactive</option>
+                    <option value="velocity">Kinetic Heatmap</option>
+                </select>
+                <label style="margin-top:5px;">Vibration Sensitivity</label>
+                <input type="range" id="sensitivity" min="0.1" max="5" step="0.1" value="2.0">
+            </div>
+
+            <div class="control-group">
+                <div class="stats">
+                    Frequency: <span id="detectedFreq">0</span> Hz<br>
+                    Mode N: <span id="modeN">0</span><br>
+                    Mode M: <span id="modeM">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('plate');
+        const ctx = canvas.getContext('2d');
+        const CANVAS_SIZE = 600;
+        const PARTICLE_COUNT = 10000;
+        
+        canvas.width = CANVAS_SIZE;
+        canvas.height = CANVAS_SIZE;
+
+        let audioCtx, analyser, source, buffer;
+        let isPlaying = false;
+        let n = 2, m = 1;
+        let currentFreq = 0;
+        let particles = [];
+
+        // UI Selectors
+        const fileInput = document.getElementById('audioFile');
+        const colorMode = document.getElementById('colorMode');
+        const freqLabel = document.getElementById('detectedFreq');
+        const nLabel = document.getElementById('modeN');
+        const mLabel = document.getElementById('modeM');
+        const sensitivity = document.getElementById('sensitivity');
+        const addModeBtn = document.getElementById('addMode');
+        const weightSlider = document.getElementById('weightSlider');
+        const weightValLabel = document.getElementById('weightVal');
+        const thickSlider = document.getElementById('thickSlider');
+        const thickValLabel = document.getElementById('thickVal');
+
+        class Grain {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * CANVAS_SIZE;
+                this.y = Math.random() * CANVAS_SIZE;
+                this.vx = 0;
+                this.vy = 0;
+            }
+
+            update() {
+                if (!isPlaying) return;
+
+                let nx = this.x / CANVAS_SIZE;
+                let ny = this.y / CANVAS_SIZE;
+                let PI = Math.PI;
+                let w = parseFloat(weightSlider.value);
+                let thickness = parseFloat(thickSlider.value);
+
+                let termA = Math.cos(n * PI * nx) * Math.cos(m * PI * ny);
+                let termB = Math.cos(m * PI * nx) * Math.cos(n * PI * ny);
+                
+                let intensity = addModeBtn.checked ? (termA + (w * termB)) : (termA - (w * termB));
+                let amp = Math.abs(intensity);
+
+                // THICKNESS LOGIC:
+                // 1. Higher thickness means higher threshold to start moving (inertia)
+                // 2. Higher thickness reduces the jitter intensity
+                let movementThreshold = 0.01 * thickness;
+                
+                if (amp > movementThreshold) {
+                    let force = (amp / thickness) * sensitivity.value;
+                    this.vx = (Math.random() - 0.5) * force;
+                    this.vy = (Math.random() - 0.5) * force;
+                    this.x += this.vx;
+                    this.y += this.vy;
+                }
+
+                if (this.x < 0 || this.x > CANVAS_SIZE || this.y < 0 || this.y > CANVAS_SIZE) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                let color;
+                switch(colorMode.value) {
+                    case 'amber': color = '#ffb300'; break;
+                    case 'freq': color = `hsl(${(currentFreq/8) % 360}, 80%, 60%)`; break;
+                    case 'velocity': 
+                        let speed = Math.abs(this.vx) + Math.abs(this.vy);
+                        color = `rgb(${120 + speed * 60}, 70, ${255 - speed * 80})`;
+                        break;
+                    default: color = 'rgba(255,255,255,0.8)';
+                }
+                ctx.fillStyle = color;
+                ctx.fillRect(this.x, this.y, 1.2, 1.2);
+            }
+        }
+
+        for(let i=0; i<PARTICLE_COUNT; i++) particles.push(new Grain());
+
+        async function setupAudio(file) {
+            if (audioCtx) audioCtx.close();
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            const arrayBuffer = await file.arrayBuffer();
+            buffer = await audioCtx.decodeAudioData(arrayBuffer);
+            startPlayback();
+        }
+
+        function startPlayback() {
+            if (source) source.stop();
+            source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            source.start();
+            isPlaying = true;
+            document.getElementById('togglePlay').classList.add('active');
+        }
+
+        function analyzeFrequency() {
+            if (!isPlaying || !analyser) return;
+
+            let bufferLength = analyser.frequencyBinCount;
+            let dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            let maxVal = 0;
+            let maxIndex = 0;
+            for(let i = 0; i < bufferLength; i++) {
+                if(dataArray[i] > maxVal) {
+                    maxVal = dataArray[i];
+                    maxIndex = i;
+                }
+            }
+
+            currentFreq = maxIndex * audioCtx.sampleRate / analyser.fftSize;
+            let thickness = parseFloat(thickSlider.value);
+            
+            if (maxVal > 30) {
+                freqLabel.textContent = Math.round(currentFreq);
+                
+                // STIFFNESS LOGIC:
+                // Thicker plates require higher freq for same N/M. 
+                // So we divide the mode calculation by thickness.
+                n = Math.floor((currentFreq / 110) / (thickness * 0.8)) + 2;
+                m = Math.floor(((currentFreq % 110) / 12) / (thickness * 0.8)) + 1;
+                
+                nLabel.textContent = n;
+                mLabel.textContent = m;
+            }
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) setupAudio(e.target.files[0]);
+        });
+
+        document.getElementById('togglePlay').addEventListener('click', () => {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') { audioCtx.resume(); isPlaying = true; document.getElementById('togglePlay').classList.add('active'); }
+            else { audioCtx.suspend(); isPlaying = false; document.getElementById('togglePlay').classList.remove('active'); }
+        });
+
+        weightSlider.addEventListener('input', (e) => { weightValLabel.textContent = e.target.value; });
+        thickSlider.addEventListener('input', (e) => { thickValLabel.textContent = e.target.value; });
+
+        function animate() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            analyzeFrequency();
+            particles.forEach(p => { p.update(); p.draw(); });
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
