@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratorio de Cimática - Placa de Chladni Física</title>
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 25px;
+            padding: 25px;
+            background: #1a1a1a;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+            border: 1px solid #333;
+        }
+
+        canvas {
+            background-color: #000;
+            border: 1px solid #444;
+            border-radius: 12px;
+            box-shadow: inset 0 0 50px rgba(255,255,255,0.05);
+        }
+
+        .sidebar {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            background: #252525;
+            border-radius: 10px;
+            border: 1px solid #333;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #aaa;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        select, input[type="file"], button, input[type="color"] {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        input[type="color"] {
+            padding: 2px;
+            height: 35px;
+            width: 100%;
+        }
+
+        button:hover { background: #444; }
+        button.active { background: #3498db; border-color: #3498db; }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .stats {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #3498db;
+            line-height: 1.5;
+        }
+
+        h2 { margin: 0 0 5px 0; font-weight: 300; color: #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <canvas id="plate"></canvas>
+
+        <div class="sidebar">
+            <h2>Cimática Física</h2>
+            
+            <div class="control-group">
+                <label>Fuente de Audio</label>
+                <input type="file" id="audioFile" accept="audio/*">
+                <button id="togglePlay">Reproducir / Pausar</button>
+            </div>
+
+            <div class="control-group">
+                <label>Propiedades del Material</label>
+                <div class="row">
+                    <label>Material de la Placa</label>
+                </div>
+                <select id="materialSelect">
+                    <option value="aluminum">Aluminio (E=69 GPa, ρ=2700 kg/m³)</option>
+                    <option value="steel">Acero (E=200 GPa, ρ=7850 kg/m³)</option>
+                    <option value="brass">Latón (E=100 GPa, ρ=8500 kg/m³)</option>
+                    <option value="glass">Vidrio (E=60 GPa, ρ=2500 kg/m³)</option>
+                </select>
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Grosor $h$ (mm)</label>
+                    <span id="thickVal" style="font-size: 10px; color:#3498db">2.0 mm</span>
+                </div>
+                <input type="range" id="thickSlider" min="0.5" max="8.0" step="0.1" value="2.0">
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Geometría</label>
+                </div>
+                <select id="plateShape">
+                    <option value="square">Cuadrada</option>
+                    <option value="rectangle">Rectangular</option>
+                    <option value="circle">Circular</option>
+                    <option value="hexagon">Hexagonal</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Propiedades de los Granos</label>
+                <div class="row">
+                    <label>Tamaño del Grano</label>
+                    <span id="grainSizeVal" style="font-size: 10px; color:#3498db">1.5 px</span>
+                </div>
+                <input type="range" id="grainSizeSlider" min="0.5" max="5.0" step="0.1" value="1.5">
+
+                <label style="margin-top:5px;">Sensibilidad a la Vibración</label>
+                <input type="range" id="sensitivity" min="0.1" max="5" step="0.1" value="2.0">
+            </div>
+
+            <div class="control-group">
+                <label>Colores</label>
+                <div class="row">
+                    <label>Modo de Color</label>
+                </div>
+                <select id="colorMode">
+                    <option value="custom">Personalizado</option>
+                    <option value="amber">Brillo Ámbar</option>
+                    <option value="freq">Reactivo a la Frecuencia</option>
+                    <option value="velocity">Mapa de Calor Cinético</option>
+                </select>
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Color de Granos</label>
+                    <input type="color" id="grainColorPicker" value="#ffffff">
+                </div>
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Color de Fondo</label>
+                    <input type="color" id="bgColorPicker" value="#000000">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="stats">
+                    Frecuencia Dominante: <span id="detectedFreq">0</span> Hz<br>
+                    Rigidez Flexión D: <span id="stiffnessD">0</span> N·m<br>
+                    Modos Excitados: <span id="activeModesCount">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('plate');
+        const ctx = canvas.getContext('2d');
+        const CANVAS_SIZE = 600;
+        const PARTICLE_COUNT = 10000;
+        
+        canvas.width = CANVAS_SIZE;
+        canvas.height = CANVAS_SIZE;
+
+        // --- CONSTANTES FÍSICAS Y DE MATERIALES ---
+        const Lx = 0.4; // Ancho de placa en metros (40 cm)
+        const Ly = 0.4; // Alto de placa en metros (40 cm)
+
+        const MATERIALS = {
+            aluminum: { E: 69e9,  rho: 2700, nu: 0.33 },
+            steel:    { E: 200e9, rho: 7850, nu: 0.30 },
+            brass:    { E: 100e9, rho: 8500, nu: 0.34 },
+            glass:    { E: 60e9,  rho: 2500, nu: 0.23 }
+        };
+
+        let resonantModes = [];
+        let audioCtx, analyser, source, buffer;
+        let isPlaying = false;
+        let currentFreq = 0;
+        let particles = [];
+
+        // Selectores UI
+        const fileInput = document.getElementById('audioFile');
+        const materialSelect = document.getElementById('materialSelect');
+        const colorMode = document.getElementById('colorMode');
+        const grainColorPicker = document.getElementById('grainColorPicker');
+        const bgColorPicker = document.getElementById('bgColorPicker');
+        const plateShape = document.getElementById('plateShape');
+        const grainSizeSlider = document.getElementById('grainSizeSlider');
+        const grainSizeVal = document.getElementById('grainSizeVal');
+        const freqLabel = document.getElementById('detectedFreq');
+        const stiffnessLabel = document.getElementById('stiffnessD');
+        const activeModesLabel = document.getElementById('activeModesCount');
+        const sensitivity = document.getElementById('sensitivity');
+        const thickSlider = document.getElementById('thickSlider');
+        const thickValLabel = document.getElementById('thickVal');
+
+        // Cálculo de las Frecuencias de Resonancia $f_{n,m}$ reales según Kirchhoff-Love
+        function calculateResonantFrequencies() {
+            const mat = MATERIALS[materialSelect.value];
+            const h = parseFloat(thickSlider.value) * 0.001; // Conversión a metros
+            
+            // Rigidez a la flexión: D = (E * h^3) / (12 * (1 - ν^2))
+            const D = (mat.E * Math.pow(h, 3)) / (12 * (1 - Math.pow(mat.nu, 2)));
+            stiffnessLabel.textContent = D.toExponential(2);
+
+            resonantModes = [];
+
+            // Generar tabla de modos propios (n, m) de 1 a 8
+            for (let n = 1; n <= 8; n++) {
+                for (let m = 1; m <= 8; m++) {
+                    // Frecuencia propia de Kirchhoff-Love para placa rectangular libre/apoyada:
+                    // f_{n,m} = (π/2) * sqrt(D / (ρ * h)) * ((n/L_x)^2 + (m/L_y)^2)
+                    let f_nm = (Math.PI / 2) * Math.sqrt(D / (mat.rho * h)) * 
+                               (Math.pow(n / Lx, 2) + Math.pow(m / Ly, 2));
+                    
+                    resonantModes.push({ n, m, freq: f_nm, amplitude: 0 });
+                }
+            }
+        }
+
+        function isInsideShape(x, y, shape) {
+            const cx = CANVAS_SIZE / 2;
+            const cy = CANVAS_SIZE / 2;
+            
+            switch (shape) {
+                case 'circle':
+                    return Math.hypot(x - cx, y - cy) <= CANVAS_SIZE * 0.45;
+                case 'rectangle':
+                    return Math.abs(x - cx) <= (CANVAS_SIZE * 0.9) / 2 && Math.abs(y - cy) <= (CANVAS_SIZE * 0.5) / 2;
+                case 'hexagon':
+                    const hexRadius = CANVAS_SIZE * 0.45;
+                    const dx = Math.abs(x - cx);
+                    const dy = Math.abs(y - cy);
+                    if (dx > hexRadius || dy > hexRadius * Math.sqrt(3) / 2) return false;
+                    return hexRadius * Math.sqrt(3) / 2 - dy >= Math.sqrt(3) / 3 * dx;
+                case 'square':
+                default:
+                    return Math.abs(x - cx) <= (CANVAS_SIZE * 0.9) / 2 && Math.abs(y - cy) <= (CANVAS_SIZE * 0.9) / 2;
+            }
+        }
+
+        class Grain {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                const shape = plateShape.value;
+                let valid = false;
+                let attempts = 0;
+
+                while (!valid && attempts < 100) {
+                    this.x = Math.random() * CANVAS_SIZE;
+                    this.y = Math.random() * CANVAS_SIZE;
+                    valid = isInsideShape(this.x, this.y, shape);
+                    attempts++;
+                }
+                this.vx = 0;
+                this.vy = 0;
+            }
+
+            update() {
+                if (!isPlaying) return;
+
+                let x_m = (this.x / CANVAS_SIZE) * Lx;
+                let y_m = (this.y / CANVAS_SIZE) * Ly;
+
+                // Superposición modal: w(x,y) = Suma( A_nm * W_nm(x,y) )
+                let displacement = 0;
+                
+                for (let i = 0; i < resonantModes.length; i++) {
+                    const mode = resonantModes[i];
+                    if (mode.amplitude > 0.05) {
+                        // Forma nodal W_nm(x,y) = cos(n*π*x/Lx) * cos(m*π*y/Ly)
+                        let W_nm = Math.cos((mode.n * Math.PI * x_m) / Lx) * 
+                                   Math.cos((mode.m * Math.PI * y_m) / Ly);
+                        displacement += mode.amplitude * W_nm;
+                    }
+                }
+
+                let amp = Math.abs(displacement);
+                let thickness = parseFloat(thickSlider.value);
+                let movementThreshold = 0.015 * thickness;
+
+                if (amp > movementThreshold) {
+                    let force = (amp / thickness) * sensitivity.value;
+                    this.vx = (Math.random() - 0.5) * force;
+                    this.vy = (Math.random() - 0.5) * force;
+                    this.x += this.vx;
+                    this.y += this.vy;
+                }
+
+                if (!isInsideShape(this.x, this.y, plateShape.value)) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                let color;
+                switch(colorMode.value) {
+                    case 'amber': color = '#ffb300'; break;
+                    case 'freq': color = `hsl(${(currentFreq/8) % 360}, 80%, 60%)`; break;
+                    case 'velocity': 
+                        let speed = Math.abs(this.vx) + Math.abs(this.vy);
+                        color = `rgb(${120 + speed * 60}, 70, ${255 - speed * 80})`;
+                        break;
+                    case 'custom':
+                    default: color = grainColorPicker.value;
+                }
+
+                const size = parseFloat(grainSizeSlider.value);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        for(let i=0; i<PARTICLE_COUNT; i++) particles.push(new Grain());
+
+        async function setupAudio(file) {
+            if (audioCtx) audioCtx.close();
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            const arrayBuffer = await file.arrayBuffer();
+            buffer = await audioCtx.decodeAudioData(arrayBuffer);
+            calculateResonantFrequencies();
+            startPlayback();
+        }
+
+        function startPlayback() {
+            if (source) source.stop();
+            source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            source.start();
+            isPlaying = true;
+            document.getElementById('togglePlay').classList.add('active');
+        }
+
+        function analyzeFrequency() {
+            if (!isPlaying || !analyser) return;
+
+            let bufferLength = analyser.frequencyBinCount;
+            let dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            let sampleRate = audioCtx.sampleRate;
+            let fftSize = analyser.fftSize;
+
+            // Encontrar la frecuencia pico principal
+            let maxVal = 0, maxIndex = 0;
+            for(let i = 0; i < bufferLength; i++) {
+                if(dataArray[i] > maxVal) {
+                    maxVal = dataArray[i];
+                    maxIndex = i;
+                }
+            }
+            currentFreq = maxIndex * sampleRate / fftSize;
+            if (maxVal > 30) freqLabel.textContent = Math.round(currentFreq);
+
+            // Mapear la energía de la FFT a la amplitud A_nm de cada modo propio
+            let activeCount = 0;
+            resonantModes.forEach(mode => {
+                let binIndex = Math.round((mode.freq * fftSize) / sampleRate);
+                if (binIndex < bufferLength) {
+                    mode.amplitude = dataArray[binIndex] / 255.0;
+                    if (mode.amplitude > 0.05) activeCount++;
+                } else {
+                    mode.amplitude = 0;
+                }
+            });
+            activeModesLabel.textContent = activeCount;
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) setupAudio(e.target.files[0]);
+        });
+
+        document.getElementById('togglePlay').addEventListener('click', () => {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') { audioCtx.resume(); isPlaying = true; document.getElementById('togglePlay').classList.add('active'); }
+            else { audioCtx.suspend(); isPlaying = false; document.getElementById('togglePlay').classList.remove('active'); }
+        });
+
+        materialSelect.addEventListener('change', calculateResonantFrequencies);
+        thickSlider.addEventListener('input', (e) => { 
+            thickValLabel.textContent = parseFloat(e.target.value).toFixed(1) + ' mm';
+            calculateResonantFrequencies();
+        });
+        
+        grainSizeSlider.addEventListener('input', (e) => { grainSizeVal.textContent = e.target.value + ' px'; });
+        plateShape.addEventListener('change', () => { particles.forEach(p => p.reset()); });
+
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        function animate() {
+            ctx.fillStyle = hexToRgba(bgColorPicker.value, 0.25);
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            analyzeFrequency();
+            particles.forEach(p => { p.update(); p.draw(); });
+            requestAnimationFrame(animate);
+        }
+
+        calculateResonantFrequencies();
+        animate();
+    </script>
+</body>
+</html>
