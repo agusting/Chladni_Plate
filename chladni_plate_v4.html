@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chladni Plate - Audio Visualizer</title>
+    <title>Laboratorio de Cimática - Placa de Chladni</title>
     <style>
         body {
             background-color: #0d0d0d;
@@ -41,6 +41,9 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding-right: 5px;
         }
 
         .control-group {
@@ -67,7 +70,7 @@
             font-weight: bold;
         }
 
-        select, input[type="file"], button {
+        select, input[type="file"], button, input[type="color"] {
             background: #333;
             color: white;
             border: 1px solid #444;
@@ -75,6 +78,12 @@
             border-radius: 6px;
             cursor: pointer;
             font-size: 13px;
+        }
+
+        input[type="color"] {
+            padding: 2px;
+            height: 35px;
+            width: 100%;
         }
 
         button:hover { background: #444; }
@@ -109,51 +118,84 @@
         <canvas id="plate"></canvas>
 
         <div class="sidebar">
-            <h2>Cymatics Lab</h2>
+            <h2>Laboratorio de Cimática</h2>
             
             <div class="control-group">
-                <label>Audio Source</label>
+                <label>Fuente de Audio</label>
                 <input type="file" id="audioFile" accept="audio/*">
-                <button id="togglePlay">Play / Pause</button>
+                <button id="togglePlay">Reproducir / Pausar</button>
             </div>
 
             <div class="control-group">
-                <label>Plate Physical Properties</label>
+                <label>Geometría de la Placa</label>
                 <div class="row">
-                    <label>Thickness (Stiffness)</label>
+                    <label>Forma</label>
+                </div>
+                <select id="plateShape">
+                    <option value="square">Cuadrada</option>
+                    <option value="rectangle">Rectangular</option>
+                    <option value="circle">Circular</option>
+                    <option value="hexagon">Hexagonal</option>
+                </select>
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Grosor (Rigidez)</label>
                     <span id="thickVal" style="font-size: 10px; color:#3498db">1.0</span>
                 </div>
                 <input type="range" id="thickSlider" min="0.5" max="5.0" step="0.1" value="1.0">
                 
                 <div class="row" style="margin-top:5px;">
-                    <label>Symmetry Weight</label>
+                    <label>Peso de Simetría</label>
                     <span id="weightVal" style="font-size: 10px; color:#3498db">0.98</span>
                 </div>
                 <input type="range" id="weightSlider" min="0.5" max="1.5" step="0.01" value="0.98">
                 
                 <label class="checkbox-container" style="margin-top:5px;">
                     <input type="checkbox" id="addMode" checked> 
-                    Symmetric Mode (Addition)
+                    Modo Simétrico (Suma)
                 </label>
             </div>
 
             <div class="control-group">
-                <label>Visuals</label>
-                <select id="colorMode">
-                    <option value="white">Classic White</option>
-                    <option value="amber">Amber Glow</option>
-                    <option value="freq">Frequency Reactive</option>
-                    <option value="velocity">Kinetic Heatmap</option>
-                </select>
-                <label style="margin-top:5px;">Vibration Sensitivity</label>
+                <label>Propiedades de los Granos</label>
+                <div class="row">
+                    <label>Tamaño del Grano</label>
+                    <span id="grainSizeVal" style="font-size: 10px; color:#3498db">1.5 px</span>
+                </div>
+                <input type="range" id="grainSizeSlider" min="0.5" max="5.0" step="0.1" value="1.5">
+
+                <label style="margin-top:5px;">Sensibilidad a la Vibración</label>
                 <input type="range" id="sensitivity" min="0.1" max="5" step="0.1" value="2.0">
             </div>
 
             <div class="control-group">
+                <label>Personalización de Color</label>
+                <div class="row">
+                    <label>Modo de Color</label>
+                </div>
+                <select id="colorMode">
+                    <option value="custom">Personalizado</option>
+                    <option value="amber">Brillo Ámbar</option>
+                    <option value="freq">Reactivo a la Frecuencia</option>
+                    <option value="velocity">Mapa de Calor Cinético</option>
+                </select>
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Color de Granos</label>
+                    <input type="color" id="grainColorPicker" value="#ffffff">
+                </div>
+
+                <div class="row" style="margin-top:5px;">
+                    <label>Color de Fondo</label>
+                    <input type="color" id="bgColorPicker" value="#000000">
+                </div>
+            </div>
+
+            <div class="control-group">
                 <div class="stats">
-                    Frequency: <span id="detectedFreq">0</span> Hz<br>
-                    Mode N: <span id="modeN">0</span><br>
-                    Mode M: <span id="modeM">0</span>
+                    Frecuencia: <span id="detectedFreq">0</span> Hz<br>
+                    Modo N: <span id="modeN">0</span><br>
+                    Modo M: <span id="modeM">0</span>
                 </div>
             </div>
         </div>
@@ -174,9 +216,14 @@
         let currentFreq = 0;
         let particles = [];
 
-        // UI Selectors
+        // Selectores UI
         const fileInput = document.getElementById('audioFile');
         const colorMode = document.getElementById('colorMode');
+        const grainColorPicker = document.getElementById('grainColorPicker');
+        const bgColorPicker = document.getElementById('bgColorPicker');
+        const plateShape = document.getElementById('plateShape');
+        const grainSizeSlider = document.getElementById('grainSizeSlider');
+        const grainSizeVal = document.getElementById('grainSizeVal');
         const freqLabel = document.getElementById('detectedFreq');
         const nLabel = document.getElementById('modeN');
         const mLabel = document.getElementById('modeM');
@@ -187,14 +234,52 @@
         const thickSlider = document.getElementById('thickSlider');
         const thickValLabel = document.getElementById('thickVal');
 
+        // Función para verificar si un punto está dentro de la forma seleccionada
+        function isInsideShape(x, y, shape) {
+            const cx = CANVAS_SIZE / 2;
+            const cy = CANVAS_SIZE / 2;
+            
+            switch (shape) {
+                case 'circle':
+                    const radius = CANVAS_SIZE * 0.45;
+                    return Math.hypot(x - cx, y - cy) <= radius;
+                
+                case 'rectangle':
+                    const rectWidth = CANVAS_SIZE * 0.9;
+                    const rectHeight = CANVAS_SIZE * 0.5;
+                    return Math.abs(x - cx) <= rectWidth / 2 && Math.abs(y - cy) <= rectHeight / 2;
+
+                case 'hexagon':
+                    const hexRadius = CANVAS_SIZE * 0.45;
+                    const dx = Math.abs(x - cx);
+                    const dy = Math.abs(y - cy);
+                    if (dx > hexRadius || dy > hexRadius * Math.sqrt(3) / 2) return false;
+                    return hexRadius * Math.sqrt(3) / 2 - dy >= Math.sqrt(3) / 3 * dx;
+
+                case 'square':
+                default:
+                    const side = CANVAS_SIZE * 0.9;
+                    return Math.abs(x - cx) <= side / 2 && Math.abs(y - cy) <= side / 2;
+            }
+        }
+
         class Grain {
             constructor() {
                 this.reset();
             }
 
             reset() {
-                this.x = Math.random() * CANVAS_SIZE;
-                this.y = Math.random() * CANVAS_SIZE;
+                const shape = plateShape.value;
+                let valid = false;
+                let attempts = 0;
+
+                // Generar posiciones únicamente dentro del área delimitada
+                while (!valid && attempts < 100) {
+                    this.x = Math.random() * CANVAS_SIZE;
+                    this.y = Math.random() * CANVAS_SIZE;
+                    valid = isInsideShape(this.x, this.y, shape);
+                    attempts++;
+                }
                 this.vx = 0;
                 this.vy = 0;
             }
@@ -214,9 +299,6 @@
                 let intensity = addModeBtn.checked ? (termA + (w * termB)) : (termA - (w * termB));
                 let amp = Math.abs(intensity);
 
-                // THICKNESS LOGIC:
-                // 1. Higher thickness means higher threshold to start moving (inertia)
-                // 2. Higher thickness reduces the jitter intensity
                 let movementThreshold = 0.01 * thickness;
                 
                 if (amp > movementThreshold) {
@@ -227,7 +309,8 @@
                     this.y += this.vy;
                 }
 
-                if (this.x < 0 || this.x > CANVAS_SIZE || this.y < 0 || this.y > CANVAS_SIZE) {
+                // Reiniciar grano si sale de la forma permitida
+                if (!isInsideShape(this.x, this.y, plateShape.value)) {
                     this.reset();
                 }
             }
@@ -241,10 +324,15 @@
                         let speed = Math.abs(this.vx) + Math.abs(this.vy);
                         color = `rgb(${120 + speed * 60}, 70, ${255 - speed * 80})`;
                         break;
-                    default: color = 'rgba(255,255,255,0.8)';
+                    case 'custom':
+                    default: color = grainColorPicker.value;
                 }
+
+                const size = parseFloat(grainSizeSlider.value);
                 ctx.fillStyle = color;
-                ctx.fillRect(this.x, this.y, 1.2, 1.2);
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, size / 2, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
 
@@ -293,10 +381,6 @@
             
             if (maxVal > 30) {
                 freqLabel.textContent = Math.round(currentFreq);
-                
-                // STIFFNESS LOGIC:
-                // Thicker plates require higher freq for same N/M. 
-                // So we divide the mode calculation by thickness.
                 n = Math.floor((currentFreq / 110) / (thickness * 0.8)) + 2;
                 m = Math.floor(((currentFreq % 110) / 12) / (thickness * 0.8)) + 1;
                 
@@ -317,10 +401,25 @@
 
         weightSlider.addEventListener('input', (e) => { weightValLabel.textContent = e.target.value; });
         thickSlider.addEventListener('input', (e) => { thickValLabel.textContent = e.target.value; });
+        grainSizeSlider.addEventListener('input', (e) => { grainSizeVal.textContent = e.target.value + ' px'; });
+        
+        // Reiniciar posiciones al cambiar la forma de la placa
+        plateShape.addEventListener('change', () => {
+            particles.forEach(p => p.reset());
+        });
+
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
 
         function animate() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            // Aplicar el color de fondo personalizado con estela (alpha de 0.25)
+            ctx.fillStyle = hexToRgba(bgColorPicker.value, 0.25);
             ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
             analyzeFrequency();
             particles.forEach(p => { p.update(); p.draw(); });
             requestAnimationFrame(animate);
